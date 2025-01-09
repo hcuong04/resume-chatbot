@@ -15,7 +15,8 @@ from typing import List, Any, Dict, Optional
 from langchain_core.documents import Document
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from collections import defaultdict
-
+from langchain_ollama import OllamaEmbeddings
+from langchain_ollama import ChatOllama
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
@@ -33,17 +34,16 @@ from langchain.agents.format_scratchpad import format_to_openai_functions
 from typing import Literal, List
 import os
 
-
-api_key = st.secrets["openai_key"]
-
 # ====================================================================
 # Load databases and initialize the retrievers
 # ====================================================================
-# Instantiate the OpenAIEmbeddings class
-openai_embeddings = OpenAIEmbeddings(api_key=api_key)
-# This text splitter is used to create the parent documents
+# !Instantiate the OpenAIEmbeddings class
+nomic_embeddings= OllamaEmbeddings(model="nomic-embed-text")
+
+# !This text splitter is used to create the parent documents
 parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000)
-# This text splitter is used to create the child documents
+
+# !This text splitter is used to create the child documents
 # It should create documents smaller than the parent
 child_splitter = RecursiveCharacterTextSplitter(chunk_size=400)
 
@@ -87,11 +87,11 @@ def load_chunk_retriever(category_name):
 
     category_name = category_name.replace(" ", "_").lower()
 
-    vectorstore = FAISS.load_local(f"./indices/chunks/chunk_vectorstore_{category_name}", 
-                                    openai_embeddings,
+    vectorstore = FAISS.load_local(f"./files/chunks/chunk_vectorstore_{category_name}", 
+                                    nomic_embeddings,
                                     allow_dangerous_deserialization=True)
     
-    fs = LocalFileStore(f"./indices/chunks/chunk_docstore_{category_name}")
+    fs = LocalFileStore(f"./files/chunks/chunk_docstore_{category_name}")
     store = create_kv_docstore(fs)
     
     chunk_retriever = CustomParentDocumentRetriever(
@@ -109,21 +109,21 @@ def load_summary_retriever(category_name):
 
     category_name = category_name.replace(" ", "_").lower()
 
-    #print(f"Loading vector store for category: {category_name}")
+    print(f"Loading vector store for category: {category_name}")
 
     # Load the vector store
     whole_doc_summary_vectorstore = FAISS.load_local(
-        f"./indices/summaries/whole_doc_summary_vectorstore_{category_name}", 
-        openai_embeddings,
+        f"./files/summaries/whole_doc_summary_vectorstore_{category_name}", 
+        nomic_embeddings,
         allow_dangerous_deserialization=True
     )
 
-    #print(f"Loaded vector store for {category_name}: {whole_doc_summary_vectorstore}")
+    print(f"Loaded vector store for {category_name}: {whole_doc_summary_vectorstore}")
 
     # Define the chain function within the context
     @chain
     def whole_doc_summary_retriever(query: str) -> List[Document]:
-        #print(f"Executing chain function for category: {category_name} with query: {query}")
+        print(f"Executing chain function for category: {category_name} with query: {query}")
         docs, scores = zip(*whole_doc_summary_vectorstore.similarity_search_with_score(query=query, **{
                                                                                                         #'score_threshold': 0.6,  # filtering for docs with similarity score < 0.6
                                                                                                         'k' : 2
@@ -222,7 +222,7 @@ Output both the condensed chat history and the standalone question/request.
 
 CONDENSE_QUESTION_PROMPT = PromptTemplate.from_template(condense_template)
 
-llm = ChatOpenAI(temperature=0, model='gpt-4o-mini', openai_api_key=api_key)
+llm = ChatOllama(model="llama3.2:1b", temperature=0)
 
 llm_to_condense = llm.bind(
     functions=condense_functions,
@@ -289,8 +289,8 @@ router_prompt1 = ChatPromptTemplate.from_messages(
     ]
 )
 
-router_llm1 = ChatOpenAI(temperature=0, model='gpt-3.5-turbo', openai_api_key=api_key)
-#router_llm1 = ChatOpenAI(temperature=0, model='gpt-4o-mini', openai_api_key=api_key)
+router_llm1 = ChatOllama(model="llama3.2:1b", temperature=0)
+#router_llm1 = ChatOllama(model="llama3.2:1b", temperature=0)
 structured_llm1 = router_llm1.with_structured_output(RouteQuery1)
 router_chain1 = RunnablePassthrough.assign(classification1 = (lambda x: x['standalone_question']) | router_prompt1 | structured_llm1)
 
@@ -360,8 +360,8 @@ router_prompt2 = ChatPromptTemplate.from_messages(
     ]
 )
 
-router_llm2 = ChatOpenAI(temperature=0, model='gpt-4o-mini', openai_api_key=api_key)
-#router_llm2 = ChatOpenAI(temperature=0, model='gpt-4o', openai_api_key=api_key)
+router_llm2 = ChatOllama(model="llama3.2:1b", temperature=0)
+#router_llm2 = ChatOpenAI(temperature=0, model='gpt-4o', openai_# =# )
 structured_llm2 = router_llm2.with_structured_output(RouteQuery2)
 router_chain2 = RunnablePassthrough.assign(classification2 = (lambda x: x['standalone_question']) | router_prompt2 | structured_llm2)
 
@@ -493,8 +493,8 @@ qa_prompt = ChatPromptTemplate.from_messages([
     ("user", qa_template)
 ])
 
-qa_llm = ChatOpenAI(temperature=0.5, model='gpt-4o-mini', openai_api_key=api_key)
-#qa_llm = ChatOpenAI(temperature=0.5, model='gpt-4o', openai_api_key=api_key)
+qa_llm = ChatOllama(model="llama3.2:1b", temperature=0)
+#qa_llm = ChatOpenAI(temperature=0.5, model='gpt-4o', openai_# =# )
 qa_llm_structured = llm.bind(
     functions=qaformat_functions,
     function_call={"name": "QAFormat"}
@@ -580,8 +580,8 @@ Answer with "Y" if the answer is satisfactory and "N" if it is not.
 
 EVAL_QUESTION_PROMPT = PromptTemplate.from_template(eval_template)
 
-llm = ChatOpenAI(temperature=0, model='gpt-4o-mini', openai_api_key=api_key)
-#llm = ChatOpenAI(temperature=0, model='gpt-4o', openai_api_key=api_key)
+llm = ChatOllama(model="llama3.2:1b", temperature=0)
+#llm = ChatOpenAI(temperature=0, model='gpt-4o', openai_# =# )
 
 llm_to_eval = llm.bind(
     functions=eval_functions,
@@ -596,7 +596,7 @@ eval_chain = RunnablePassthrough.assign(eval_result = EVAL_QUESTION_PROMPT | llm
 # ====================================================================
 search = DuckDuckGoSearchRun()
 tools = [search]
-llm = ChatOpenAI(temperature=0, model='gpt-4o-mini', openai_api_key=api_key)
+llm = ChatOllama(model="llama3.2:1b", temperature=0)
 functions = [convert_to_openai_function(f) for f in tools]
 llm_to_search = llm.bind(functions=functions, function_call="auto")
 
@@ -637,47 +637,47 @@ external_search_chain = RunnableLambda(external_search_router)
 # ====================================================================
 # Complete chain
 # ====================================================================
-#complete_chain = preprocess_query_chain | router_chain | retrieval_chain | qa_chain
+# complete_chain = preprocess_query_chain | router_chain | retrieval_chain | qa_chain
 
 
 # ====================================================================
 # Other functions
 # ====================================================================
 # Function to display images if 'image_path' is in metadata
-# def get_image_path_from_doc(context):
-#     for _, docs in context.items():
-#         if isinstance(docs, list):
-#             for doc in docs:
-#                 if hasattr(doc, 'metadata'):
-#                     image_path = doc.metadata.get('image_path')
-#                     if image_path and os.path.exists(image_path):
-#                         return image_path
+def get_image_path_from_doc(context):
+    for _, docs in context.items():
+        if isinstance(docs, list):
+            for doc in docs:
+                if hasattr(doc, 'metadata'):
+                    image_path = doc.metadata.get('image_path')
+                    if image_path and os.path.exists(image_path):
+                        return image_path
 
-# def get_image_path_from_context(context):
-#     all_docs = [
-#         doc
-#         for docs in context.values()
-#         for doc in docs
-#         if 'score' in doc.metadata
-#     ] + [
-#         sub_doc
-#         for docs in context.values()
-#         for doc in docs
-#         if 'sub_docs' in doc.metadata
-#         for sub_doc in doc.metadata['sub_docs']
-#         if 'score' in sub_doc.metadata
-#     ]
+def get_image_path_from_context(context):
+    all_docs = [
+        doc
+        for docs in context.values()
+        for doc in docs
+        if 'score' in doc.metadata
+    ] + [
+        sub_doc
+        for docs in context.values()
+        for doc in docs
+        if 'sub_docs' in doc.metadata
+        for sub_doc in doc.metadata['sub_docs']
+        if 'score' in sub_doc.metadata
+    ]
 
-#     # Sort the documents by score
-#     sorted_docs = sorted(all_docs, key=lambda d: d.metadata['score'])
+    # Sort the documents by score
+    sorted_docs = sorted(all_docs, key=lambda d: d.metadata['score'])
 
-#     lowest_score_doc = sorted_docs[0]
-#     if 'image_path' in lowest_score_doc.metadata:
-#         print(lowest_score_doc.metadata['image_path'])
-#         return lowest_score_doc.metadata['image_path']
-#     else:
-#         print("No image path found")
-#         return None
+    lowest_score_doc = sorted_docs[0]
+    if 'image_path' in lowest_score_doc.metadata:
+        print(lowest_score_doc.metadata['image_path'])
+        return lowest_score_doc.metadata['image_path']
+    else:
+        print("No image path found")
+        return None
 
 # Determine the width based on the number of images
 def get_image_width(num_images):
